@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import {
   collection,
@@ -36,27 +37,24 @@ function App() {
   const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
 
-  // Auth form fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("landlord");
   const [authError, setAuthError] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
-  // Transaction form fields
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
   const [crop, setCrop] = useState(CROPS[0]);
   const [note, setNote] = useState("");
 
-  // Haari invite
   const [haariEmail, setHaariEmail] = useState("");
   const [haariError, setHaariError] = useState("");
   const [haariSuccess, setHaariSuccess] = useState("");
 
-  // Listen to auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -72,7 +70,6 @@ function App() {
     return unsub;
   }, []);
 
-  // Load haaris if landlord
   useEffect(() => {
     if (!user || !userProfile) return;
     if (userProfile.role === "landlord") {
@@ -84,7 +81,6 @@ function App() {
     }
   }, [user, userProfile]);
 
-  // Load transactions
   useEffect(() => {
     if (!user || !userProfile) return;
     let q;
@@ -122,10 +118,25 @@ function App() {
 
   const handleLogin = async () => {
     setAuthError("");
+    setResetSent(false);
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (e) {
       setAuthError("Invalid email or password");
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setAuthError("Please enter your email first!");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+      setAuthError("");
+    } catch (e) {
+      setAuthError("Email not found!");
     }
   };
 
@@ -196,10 +207,10 @@ function App() {
 
         <div style={{ background: "#fff", padding: 20, borderRadius: 12 }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            <button onClick={() => setAuthPage("login")} style={{ flex: 1, padding: 10, background: authPage === "login" ? "#2e7d32" : "#fff", color: authPage === "login" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer" }}>
+            <button onClick={() => { setAuthPage("login"); setAuthError(""); setResetSent(false); }} style={{ flex: 1, padding: 10, background: authPage === "login" ? "#2e7d32" : "#fff", color: authPage === "login" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer" }}>
               Login / لاگ ان
             </button>
-            <button onClick={() => setAuthPage("signup")} style={{ flex: 1, padding: 10, background: authPage === "signup" ? "#2e7d32" : "#fff", color: authPage === "signup" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer" }}>
+            <button onClick={() => { setAuthPage("signup"); setAuthError(""); setResetSent(false); }} style={{ flex: 1, padding: 10, background: authPage === "signup" ? "#2e7d32" : "#fff", color: authPage === "signup" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer" }}>
               Sign Up / رجسٹر
             </button>
           </div>
@@ -227,10 +238,19 @@ function App() {
           <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="minimum 6 characters" type="password" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 16, marginTop: 4, boxSizing: "border-box" }} />
 
           {authError && <p style={{ color: "red", fontSize: 13, marginBottom: 10 }}>⚠️ {authError}</p>}
+          {resetSent && <p style={{ color: "green", fontSize: 13, marginBottom: 10 }}>✅ Reset link sent! Check your email.</p>}
 
           <button onClick={authPage === "login" ? handleLogin : handleSignUp} style={{ width: "100%", padding: 12, background: "#2e7d32", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 15 }}>
             {authPage === "login" ? "✅ Login / لاگ ان" : "✅ Sign Up / رجسٹر"}
           </button>
+
+          {authPage === "login" && (
+            <p style={{ textAlign: "center", marginTop: 12 }}>
+              <span onClick={handleForgotPassword} style={{ color: "#2e7d32", cursor: "pointer", fontSize: 13, textDecoration: "underline" }}>
+                Forgot Password? / پاسورڈ بھول گئے؟
+              </span>
+            </p>
+          )}
         </div>
       </div>
     );
@@ -261,19 +281,11 @@ function App() {
         <button onClick={() => setPage("balances")} style={{ flex: 1, padding: 10, background: page === "balances" ? "#2e7d32" : "#fff", color: page === "balances" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>📊 حساب</button>
       </div>
 
-      {/* HOME PAGE - LANDLORD */}
       {page === "home" && userProfile?.role === "landlord" && (
         <div>
           <div style={{ background: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
-            <h3 style={{ marginTop: 0, color: "#2e7d32" }}>
-              ➕ Add Haari / هاري شامل ڪريو
-            </h3>
-            <input
-              value={haariEmail}
-              onChange={(e) => setHaariEmail(e.target.value)}
-              placeholder="Haari's email address"
-              style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 8, boxSizing: "border-box" }}
-            />
+            <h3 style={{ marginTop: 0, color: "#2e7d32" }}>➕ Add Haari / هاري شامل ڪريو</h3>
+            <input value={haariEmail} onChange={(e) => setHaariEmail(e.target.value)} placeholder="Haari's email address" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 8, boxSizing: "border-box" }} />
             <button onClick={addHaari} style={{ width: "100%", padding: 10, background: "#2e7d32", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>
               ✅ Add Haari / شامل ڪريو
             </button>
@@ -296,7 +308,6 @@ function App() {
         </div>
       )}
 
-      {/* HOME PAGE - HAARI */}
       {page === "home" && userProfile?.role === "haari" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>📊 My Balance / منهنجو حساب</h3>
@@ -309,7 +320,6 @@ function App() {
         </div>
       )}
 
-      {/* ADD TRANSACTION - landlord only */}
       {page === "add" && userProfile?.role === "landlord" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>+ New Transaction / نیا لین دین</h3>
@@ -345,7 +355,6 @@ function App() {
         </div>
       )}
 
-      {/* BALANCES */}
       {page === "balances" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>📊 Transactions / لین دین</h3>
