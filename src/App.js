@@ -50,6 +50,8 @@ function App() {
   const [amount, setAmount] = useState("");
   const [crop, setCrop] = useState(CROPS[0]);
   const [note, setNote] = useState("");
+  const [txnLoading, setTxnLoading] = useState(false);
+  const [txnSuccess, setTxnSuccess] = useState("");
 
   const [haariEmail, setHaariEmail] = useState("");
   const [haariError, setHaariError] = useState("");
@@ -171,26 +173,46 @@ function App() {
 
   const addTransaction = async () => {
     if (!from || !to || !amount) return;
-    const haari = people.find((p) => p.fullName === to || p.fullName === from);
-    await addDoc(collection(db, "transactions"), {
-      from,
-      to,
-      amount: parseFloat(amount),
-      crop,
-      note,
-      landlordId: user.uid,
-      haariId: haari ? haari.id : "",
-      createdAt: new Date(),
-    });
-    setAmount("");
-    setNote("");
+    setTxnLoading(true);
+    setTxnSuccess("");
+    try {
+      const haari = people.find((p) => p.fullName === to || p.fullName === from);
+      await addDoc(collection(db, "transactions"), {
+        from,
+        to,
+        amount: parseFloat(amount),
+        crop,
+        note,
+        landlordId: user.uid,
+        haariId: haari ? haari.id : "",
+        createdAt: new Date(),
+      });
+      setTxnSuccess("✅ Transaction added successfully! / لین دین شامل ہو گیا!");
+      setAmount("");
+      setNote("");
+      setFrom("");
+      setTo("");
+    } catch (e) {
+      setTxnSuccess("⚠️ Something went wrong. Try again!");
+    }
+    setTxnLoading(false);
   };
 
+  // Fixed balance — haari owes landlord so should be negative when landlord pays haari
   const getBalance = (name) => {
     let balance = 0;
     transactions.forEach((t) => {
-      if (t.from === name) balance -= t.amount;
-      if (t.to === name) balance += t.amount;
+      if (t.from === name) balance += t.amount; // landlord gave = haari owes
+      if (t.to === name) balance -= t.amount;   // haari paid back = reduces debt
+    });
+    return balance;
+  };
+
+  const getHaariBalance = () => {
+    let balance = 0;
+    transactions.forEach((t) => {
+      if (t.to === userProfile.fullName) balance -= t.amount;   // received from landlord = owes
+      if (t.from === userProfile.fullName) balance += t.amount; // paid back = reduces debt
     });
     return balance;
   };
@@ -276,11 +298,12 @@ function App() {
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button onClick={() => setPage("home")} style={{ flex: 1, padding: 10, background: page === "home" ? "#2e7d32" : "#fff", color: page === "home" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>🏠 Home</button>
         {userProfile?.role === "landlord" && (
-          <button onClick={() => setPage("add")} style={{ flex: 1, padding: 10, background: page === "add" ? "#2e7d32" : "#fff", color: page === "add" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>+ لین دین</button>
+          <button onClick={() => { setPage("add"); setTxnSuccess(""); }} style={{ flex: 1, padding: 10, background: page === "add" ? "#2e7d32" : "#fff", color: page === "add" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>+ لین دین</button>
         )}
         <button onClick={() => setPage("balances")} style={{ flex: 1, padding: 10, background: page === "balances" ? "#2e7d32" : "#fff", color: page === "balances" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>📊 حساب</button>
       </div>
 
+      {/* HOME - LANDLORD */}
       {page === "home" && userProfile?.role === "landlord" && (
         <div>
           <div style={{ background: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
@@ -299,8 +322,8 @@ function App() {
             {people.map((p) => (
               <div key={p.id} style={{ padding: 12, background: "#f9f9f9", borderRadius: 8, marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
                 <span>🌾 {p.fullName}<br /><span style={{ fontSize: 12, color: "#888" }}>{p.phone}</span></span>
-                <span style={{ color: getBalance(p.fullName) >= 0 ? "green" : "red", fontWeight: "bold" }}>
-                  {getBalance(p.fullName) >= 0 ? "+" : ""}PKR {getBalance(p.fullName).toLocaleString()}
+                <span style={{ color: getBalance(p.fullName) >= 0 ? "red" : "green", fontWeight: "bold" }}>
+                  {getBalance(p.fullName) >= 0 ? "-" : "+"}PKR {Math.abs(getBalance(p.fullName)).toLocaleString()}
                 </span>
               </div>
             ))}
@@ -308,21 +331,31 @@ function App() {
         </div>
       )}
 
+      {/* HOME - HAARI */}
       {page === "home" && userProfile?.role === "haari" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>📊 My Balance / منهنجو حساب</h3>
           <div style={{ textAlign: "center", padding: 20 }}>
-            <p style={{ fontSize: 28, fontWeight: "bold", color: transactions.reduce((sum, t) => t.to === userProfile.fullName ? sum + t.amount : t.from === userProfile.fullName ? sum - t.amount : sum, 0) >= 0 ? "green" : "red" }}>
-              PKR {transactions.reduce((sum, t) => t.to === userProfile.fullName ? sum + t.amount : t.from === userProfile.fullName ? sum - t.amount : sum, 0).toLocaleString()}
+            <p style={{ fontSize: 28, fontWeight: "bold", color: getHaariBalance() <= 0 ? "red" : "green" }}>
+              {getHaariBalance() <= 0 ? "-" : "+"}PKR {Math.abs(getHaariBalance()).toLocaleString()}
             </p>
-            <p style={{ color: "#888", fontSize: 13 }}>Your current balance</p>
+            <p style={{ color: "#888", fontSize: 13 }}>
+              {getHaariBalance() <= 0 ? "⚠️ You owe this amount / آپ یہ رقم واجب الادا ہیں" : "✅ You are in credit / آپ کا بیلنس مثبت ہے"}
+            </p>
           </div>
         </div>
       )}
 
+      {/* ADD TRANSACTION */}
       {page === "add" && userProfile?.role === "landlord" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>+ New Transaction / نیا لین دین</h3>
+
+          {txnSuccess && (
+            <div style={{ background: txnSuccess.includes("✅") ? "#e8f5e9" : "#ffebee", padding: 12, borderRadius: 8, marginBottom: 16, textAlign: "center", fontSize: 14, color: txnSuccess.includes("✅") ? "#2e7d32" : "red" }}>
+              {txnSuccess}
+            </div>
+          )}
 
           <label style={{ fontSize: 13, color: "#555" }}>From — پیسے دینے والا</label>
           <select value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 12, marginTop: 4 }}>
@@ -349,12 +382,13 @@ function App() {
           <label style={{ fontSize: 13, color: "#555" }}>Note / نوٹ (optional)</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. advance payment" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 16, marginTop: 4, boxSizing: "border-box" }} />
 
-          <button onClick={addTransaction} style={{ width: "100%", padding: 12, background: "#2e7d32", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 15 }}>
-            ✅ Add Transaction
+          <button onClick={addTransaction} disabled={txnLoading} style={{ width: "100%", padding: 12, background: txnLoading ? "#888" : "#2e7d32", color: "#fff", border: "none", borderRadius: 8, cursor: txnLoading ? "not-allowed" : "pointer", fontSize: 15 }}>
+            {txnLoading ? "⏳ Adding... / شامل ہو رہا ہے..." : "✅ Add Transaction / شامل کریں"}
           </button>
         </div>
       )}
 
+      {/* BALANCES */}
       {page === "balances" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>📊 Transactions / لین دین</h3>
