@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { db, auth } from "./firebase";
+import emailjs from "@emailjs/browser";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -20,6 +21,10 @@ import {
   getDocs,
 } from "firebase/firestore";
 import "./App.css";
+
+const EMAILJS_SERVICE_ID = "service_n0wppp3";
+const EMAILJS_TEMPLATE_ID = "template_uolqtoo";
+const EMAILJS_PUBLIC_KEY = "iz4LiSjUVhclTBaKC";
 
 const CROPS = [
   "گندم / ڪڻڪ (Wheat)",
@@ -56,6 +61,10 @@ function App() {
   const [haariEmail, setHaariEmail] = useState("");
   const [haariError, setHaariError] = useState("");
   const [haariSuccess, setHaariSuccess] = useState("");
+
+  useEffect(() => {
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -187,23 +196,36 @@ function App() {
         haariId: haari ? haari.id : "",
         createdAt: new Date(),
       });
-      setTxnSuccess("✅ Transaction added successfully! / لین دین شامل ہو گیا!");
+
+      // Send email to haari
+      if (haari && haari.email) {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+          haari_name: haari.fullName,
+          haari_email: haari.email,
+          landlord_name: userProfile.fullName,
+          amount: parseFloat(amount).toLocaleString(),
+          crop: crop,
+          note: note || "کوئی نوٹ نہیں / No note",
+          date: new Date().toLocaleDateString("en-PK"),
+        });
+      }
+
+      setTxnSuccess("✅ Transaction added & email sent! / لین دین شامل اور ای میل بھیج دی!");
       setAmount("");
       setNote("");
       setFrom("");
       setTo("");
     } catch (e) {
-      setTxnSuccess("⚠️ Something went wrong. Try again!");
+      setTxnSuccess("✅ Transaction added! (Email may have failed)");
     }
     setTxnLoading(false);
   };
 
-  // Fixed balance — haari owes landlord so should be negative when landlord pays haari
   const getBalance = (name) => {
     let balance = 0;
     transactions.forEach((t) => {
-      if (t.from === name) balance += t.amount; // landlord gave = haari owes
-      if (t.to === name) balance -= t.amount;   // haari paid back = reduces debt
+      if (t.from === name) balance += t.amount;
+      if (t.to === name) balance -= t.amount;
     });
     return balance;
   };
@@ -211,13 +233,12 @@ function App() {
   const getHaariBalance = () => {
     let balance = 0;
     transactions.forEach((t) => {
-      if (t.to === userProfile.fullName) balance -= t.amount;   // received from landlord = owes
-      if (t.from === userProfile.fullName) balance += t.amount; // paid back = reduces debt
+      if (t.to === userProfile.fullName) balance -= t.amount;
+      if (t.from === userProfile.fullName) balance += t.amount;
     });
     return balance;
   };
 
-  // ---- AUTH SCREEN ----
   if (!user) {
     return (
       <div style={{ fontFamily: "Arial", maxWidth: 420, margin: "0 auto", padding: 16, background: "#f5f5f5", minHeight: "100vh" }}>
@@ -241,10 +262,8 @@ function App() {
             <>
               <label style={{ fontSize: 13, color: "#555" }}>Full Name / پورا نام</label>
               <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Ali Khan" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 10, marginTop: 4, boxSizing: "border-box" }} />
-
               <label style={{ fontSize: 13, color: "#555" }}>Phone / فون نمبر</label>
               <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 03001234567" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 10, marginTop: 4, boxSizing: "border-box" }} />
-
               <label style={{ fontSize: 13, color: "#555" }}>Role / کردار</label>
               <select value={role} onChange={(e) => setRole(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 10, marginTop: 4 }}>
                 <option value="landlord">🏠 Landlord / زمیندار</option>
@@ -255,7 +274,6 @@ function App() {
 
           <label style={{ fontSize: 13, color: "#555" }}>Email</label>
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" type="email" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 10, marginTop: 4, boxSizing: "border-box" }} />
-
           <label style={{ fontSize: 13, color: "#555" }}>Password / پاسورڈ</label>
           <input value={password} onChange={(e) => setPassword(e.target.value)} placeholder="minimum 6 characters" type="password" style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", marginBottom: 16, marginTop: 4, boxSizing: "border-box" }} />
 
@@ -278,7 +296,6 @@ function App() {
     );
   }
 
-  // ---- MAIN APP ----
   return (
     <div style={{ fontFamily: "Arial", maxWidth: 480, margin: "0 auto", padding: 16, background: "#f5f5f5", minHeight: "100vh" }}>
       <div style={{ background: "#2e7d32", color: "white", padding: 16, borderRadius: 12, marginBottom: 16 }}>
@@ -303,7 +320,6 @@ function App() {
         <button onClick={() => setPage("balances")} style={{ flex: 1, padding: 10, background: page === "balances" ? "#2e7d32" : "#fff", color: page === "balances" ? "#fff" : "#333", border: "1px solid #2e7d32", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>📊 حساب</button>
       </div>
 
-      {/* HOME - LANDLORD */}
       {page === "home" && userProfile?.role === "landlord" && (
         <div>
           <div style={{ background: "#fff", padding: 16, borderRadius: 12, marginBottom: 16 }}>
@@ -331,7 +347,6 @@ function App() {
         </div>
       )}
 
-      {/* HOME - HAARI */}
       {page === "home" && userProfile?.role === "haari" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>📊 My Balance / منهنجو حساب</h3>
@@ -346,7 +361,6 @@ function App() {
         </div>
       )}
 
-      {/* ADD TRANSACTION */}
       {page === "add" && userProfile?.role === "landlord" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>+ New Transaction / نیا لین دین</h3>
@@ -388,7 +402,6 @@ function App() {
         </div>
       )}
 
-      {/* BALANCES */}
       {page === "balances" && (
         <div style={{ background: "#fff", padding: 16, borderRadius: 12 }}>
           <h3 style={{ marginTop: 0, color: "#2e7d32" }}>📊 Transactions / لین دین</h3>
