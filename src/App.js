@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { db, auth } from "./firebase";
 import emailjs from "@emailjs/browser";
 import {
@@ -164,6 +164,31 @@ function App() {
     return unsub;
   }, [user, userProfile]);
 
+  // ── REAL-TIME BALANCE CALCULATIONS using useMemo ──
+  const haariBalances = useMemo(() => {
+    const map = {};
+    people.forEach((p) => {
+      let balance = 0;
+      transactions.forEach((t) => {
+        if (t.to === p.fullName) balance += t.amount;
+        if (t.from === p.fullName) balance -= t.amount;
+      });
+      map[p.fullName] = balance;
+    });
+    return map;
+  }, [transactions, people]);
+
+  const myBalance = useMemo(() => {
+    if (!userProfile) return 0;
+    let balance = 0;
+    const myName = userProfile.fullName;
+    transactions.forEach((t) => {
+      if (t.to === myName) balance += t.amount;
+      if (t.from === myName) balance -= t.amount;
+    });
+    return balance;
+  }, [transactions, userProfile]);
+
   const handleSignUp = async () => {
     setAuthError("");
     if (!fullName || !email || !password || !phone) {
@@ -245,17 +270,14 @@ function App() {
   };
 
   const handleSettleUp = async (haari) => {
-    const balance = getBalance(haari.fullName);
+    const balance = haariBalances[haari.fullName] || 0;
     if (balance === 0) { setSettlingHaari(null); return; }
     setSettleLoading(true);
     try {
-      // balance > 0 means haari owes landlord → haari pays landlord
-      // balance < 0 means landlord owes haari → landlord pays haari
       const payer = balance > 0 ? haari.fullName : userProfile.fullName;
       const receiver = balance > 0 ? userProfile.fullName : haari.fullName;
       await addDoc(collection(db, "transactions"), {
-        from: payer,
-        to: receiver,
+        from: payer, to: receiver,
         amount: Math.abs(balance),
         crop: "—",
         note: "✅ Settle Up / حساب برابر",
@@ -267,27 +289,6 @@ function App() {
       setSettlingHaari(null);
     } catch (e) { alert("Could not settle. Try again."); }
     setSettleLoading(false);
-  };
-
-  // FIXED: landlord paid haari = haari owes MORE (positive = haari owes)
-  const getBalance = (haariName) => {
-    let balance = 0;
-    transactions.forEach((t) => {
-      if (t.to === haariName) balance += t.amount;   // landlord paid haari → haari owes
-      if (t.from === haariName) balance -= t.amount; // haari paid back → reduces debt
-    });
-    return balance;
-  };
-
-  // FIXED: haari sees their own debt correctly
-  const getHaariBalance = () => {
-    let balance = 0;
-    const myName = userProfile.fullName;
-    transactions.forEach((t) => {
-      if (t.to === myName) balance += t.amount;   // received money → owe more
-      if (t.from === myName) balance -= t.amount; // paid back → less debt
-    });
-    return balance;
   };
 
   const filteredTxns =
@@ -358,7 +359,6 @@ function App() {
   return (
     <div style={{ fontFamily: "'Segoe UI', Arial, sans-serif", maxWidth: 490, margin: "0 auto", padding: "0 0 32px", background: "#f4f6f3", minHeight: "100vh" }}>
 
-      {/* Header */}
       <div style={{ background: GREEN, color: "#fff", padding: "16px 18px", marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -373,7 +373,6 @@ function App() {
         </div>
       </div>
 
-      {/* Nav tabs */}
       <div style={{ display: "flex", gap: 8, padding: "0 14px", marginBottom: 14 }}>
         {[
           { id: "home", label: "🏠 Home" },
@@ -404,7 +403,7 @@ function App() {
               <h3 style={{ marginTop: 0, color: GREEN, fontSize: 15, fontWeight: 600 }}>👥 My Haaris / میرے ہاری</h3>
               {people.length === 0 && <p style={{ color: "#aaa", textAlign: "center", fontSize: 14 }}>No haaris added yet</p>}
               {people.map((p) => {
-                const bal = getBalance(p.fullName);
+                const bal = haariBalances[p.fullName] || 0;
                 return (
                   <div key={p.id} style={{ padding: "12px 14px", background: "#f9faf8", borderRadius: 10, marginBottom: 10, border: "1px solid #eee" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -436,13 +435,13 @@ function App() {
           <div style={CARD}>
             <h3 style={{ marginTop: 0, color: GREEN, fontSize: 15, fontWeight: 600 }}>📊 My Balance / منهنجو حساب</h3>
             <div style={{ textAlign: "center", padding: "20px 0" }}>
-              <p style={{ fontSize: 32, fontWeight: 700, color: getHaariBalance() > 0 ? "#c62828" : GREEN, margin: 0 }}>
-                {getHaariBalance() > 0 ? "−" : "+"}{formatPKR(getHaariBalance())}
+              <p style={{ fontSize: 32, fontWeight: 700, color: myBalance > 0 ? "#c62828" : GREEN, margin: 0 }}>
+                {myBalance > 0 ? "−" : "+"}{formatPKR(myBalance)}
               </p>
               <p style={{ color: "#888", fontSize: 13, marginTop: 8 }}>
-                {getHaariBalance() > 0
+                {myBalance > 0
                   ? "⚠️ You owe this amount / آپ یہ رقم واجب الادا ہیں"
-                  : getHaariBalance() === 0
+                  : myBalance === 0
                   ? "✅ All clear! / حساب برابر"
                   : "✅ You are in credit / آپ کا بیلنس مثبت ہے"}
               </p>
@@ -509,18 +508,10 @@ function App() {
             <div style={CARD}>
               <h3 style={{ marginTop: 0, color: GREEN, fontSize: 15, fontWeight: 600 }}>📊 Transactions / لین دین</h3>
               {filteredTxns.length === 0 && <p style={{ color: "#aaa", textAlign: "center", fontSize: 14 }}>No transactions yet</p>}
-
               {filteredTxns.map((t) => {
                 const isSettlement = t.isSettlement;
                 return (
-                  <div key={t.id} style={{
-                    padding: "13px 14px",
-                    background: isSettlement ? "#f0faf4" : "#f9faf8",
-                    borderRadius: 10,
-                    marginBottom: 10,
-                    border: isSettlement ? "1px solid #a5d6a7" : "1px solid #eee",
-                    position: "relative",
-                  }}>
+                  <div key={t.id} style={{ padding: "13px 14px", background: isSettlement ? "#f0faf4" : "#f9faf8", borderRadius: 10, marginBottom: 10, border: isSettlement ? "1px solid #a5d6a7" : "1px solid #eee", position: "relative" }}>
                     {userProfile?.role === "landlord" && (
                       <button onClick={() => setDeleteConfirm(t.id)}
                         style={{ position: "absolute", top: 10, right: 10, background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "#ccc", lineHeight: 1 }}>
@@ -562,7 +553,7 @@ function App() {
             <h3 style={{ marginTop: 0, color: GREEN, fontSize: 16, fontWeight: 700 }}>💰 Settle Up / حساب برابر</h3>
             <p style={{ fontSize: 14, color: "#555", lineHeight: 1.6 }}>
               This will record a settlement of{" "}
-              <strong style={{ color: GREEN }}>{formatPKR(getBalance(settlingHaari.fullName))}</strong>{" "}
+              <strong style={{ color: GREEN }}>{formatPKR(haariBalances[settlingHaari.fullName] || 0)}</strong>{" "}
               to zero out <strong>{settlingHaari.fullName}</strong>'s balance.
             </p>
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
