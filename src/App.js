@@ -88,6 +88,7 @@ function App() {
   const [page, setPage] = useState("home");
   const [people, setPeople] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [, forceUpdate] = useState(0);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -137,6 +138,7 @@ function App() {
       const q = query(collection(db, "users"), where("landlordId", "==", user.uid));
       const unsub = onSnapshot(q, (snap) => {
         setPeople(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        forceUpdate(n => n + 1);
       });
       return unsub;
     }
@@ -160,11 +162,11 @@ function App() {
     }
     const unsub = onSnapshot(q, (snap) => {
       setTransactions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      forceUpdate(n => n + 1);
     });
     return unsub;
   }, [user, userProfile]);
 
-  // ── REAL-TIME BALANCE CALCULATIONS using useMemo ──
   const haariBalances = useMemo(() => {
     const map = {};
     people.forEach((p) => {
@@ -299,7 +301,6 @@ function App() {
           return h && (t.from === h.fullName || t.to === h.fullName);
         });
 
-  // ── AUTH SCREEN ──────────────────────────────────────────────────────────
   if (!user) {
     return (
       <div style={{ fontFamily: "'Segoe UI', Arial, sans-serif", maxWidth: 420, margin: "0 auto", padding: 16, background: "#f4f6f3", minHeight: "100vh" }}>
@@ -355,7 +356,6 @@ function App() {
     );
   }
 
-  // ── MAIN APP ─────────────────────────────────────────────────────────────
   return (
     <div style={{ fontFamily: "'Segoe UI', Arial, sans-serif", maxWidth: 490, margin: "0 auto", padding: "0 0 32px", background: "#f4f6f3", minHeight: "100vh" }}>
 
@@ -388,7 +388,6 @@ function App() {
 
       <div style={{ padding: "0 14px" }}>
 
-        {/* ── HOME — Landlord ── */}
         {page === "home" && userProfile?.role === "landlord" && (
           <div>
             <div style={CARD}>
@@ -430,7 +429,6 @@ function App() {
           </div>
         )}
 
-        {/* ── HOME — Haari ── */}
         {page === "home" && userProfile?.role === "haari" && (
           <div style={CARD}>
             <h3 style={{ marginTop: 0, color: GREEN, fontSize: 15, fontWeight: 600 }}>📊 My Balance / منهنجو حساب</h3>
@@ -449,42 +447,34 @@ function App() {
           </div>
         )}
 
-        {/* ── ADD TRANSACTION ── */}
         {page === "add" && userProfile?.role === "landlord" && (
           <div style={CARD}>
             <h3 style={{ marginTop: 0, color: GREEN, fontSize: 15, fontWeight: 600 }}>+ New Transaction / نیا لین دین</h3>
-
             {txnSuccess && (
               <div style={{ background: txnSuccess.includes("✅") ? GREEN_LIGHT : RED_LIGHT, padding: 12, borderRadius: 9, marginBottom: 14, textAlign: "center", fontSize: 14, color: txnSuccess.includes("✅") ? GREEN : "#c62828" }}>
                 {txnSuccess}
               </div>
             )}
-
             <label style={LABEL_STYLE}>From — پیسے دینے والا</label>
             <select value={from} onChange={(e) => setFrom(e.target.value)} style={INPUT_STYLE}>
               <option value="">Select</option>
               <option value={userProfile.fullName}>{userProfile.fullName} (You)</option>
               {people.map((p) => <option key={p.id}>{p.fullName}</option>)}
             </select>
-
             <label style={LABEL_STYLE}>To — پیسے لینے والا</label>
             <select value={to} onChange={(e) => setTo(e.target.value)} style={INPUT_STYLE}>
               <option value="">Select</option>
               <option value={userProfile.fullName}>{userProfile.fullName} (You)</option>
               {people.map((p) => <option key={p.id}>{p.fullName}</option>)}
             </select>
-
             <label style={LABEL_STYLE}>Amount / رقم — PKR</label>
             <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 5000" style={INPUT_STYLE} />
-
             <label style={LABEL_STYLE}>Crop / فصل</label>
             <select value={crop} onChange={(e) => setCrop(e.target.value)} style={INPUT_STYLE}>
               {CROPS.map((c, i) => <option key={i}>{c}</option>)}
             </select>
-
             <label style={LABEL_STYLE}>Note / نوٹ (optional)</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. advance payment" style={{ ...INPUT_STYLE, marginBottom: 16 }} />
-
             <button onClick={addTransaction} disabled={txnLoading}
               style={{ ...BTN_PRIMARY, background: txnLoading ? "#aaa" : GREEN, cursor: txnLoading ? "not-allowed" : "pointer" }}>
               {txnLoading ? "⏳ Adding..." : "✅ Add Transaction / شامل کریں"}
@@ -492,7 +482,6 @@ function App() {
           </div>
         )}
 
-        {/* ── BALANCES / TRANSACTIONS ── */}
         {page === "balances" && (
           <div>
             {userProfile?.role === "landlord" && people.length > 0 && (
@@ -504,7 +493,6 @@ function App() {
                 </select>
               </div>
             )}
-
             <div style={CARD}>
               <h3 style={{ marginTop: 0, color: GREEN, fontSize: 15, fontWeight: 600 }}>📊 Transactions / لین دین</h3>
               {filteredTxns.length === 0 && <p style={{ color: "#aaa", textAlign: "center", fontSize: 14 }}>No transactions yet</p>}
@@ -546,7 +534,6 @@ function App() {
         )}
       </div>
 
-      {/* ── SETTLE UP MODAL ── */}
       {settlingHaari && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "24px 22px", width: "100%", maxWidth: 360 }}>
@@ -570,7 +557,6 @@ function App() {
         </div>
       )}
 
-      {/* ── DELETE CONFIRM MODAL ── */}
       {deleteConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: "24px 22px", width: "100%", maxWidth: 340 }}>
